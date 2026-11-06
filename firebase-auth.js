@@ -12,8 +12,10 @@ import {
 } from 'https://www.gstatic.com/firebasejs/12.4.0/firebase-auth.js';
 import { firebaseConfig } from './firebase-config.js';
 
-const app = initializeApp(firebaseConfig);
+const { authDomainOverride, ...appConfig } = firebaseConfig;
+const app = initializeApp(appConfig);
 const auth = getAuth(app);
+if (authDomainOverride) auth.config.authDomain = authDomainOverride;
 const provider = new GoogleAuthProvider();
 // GitHub Pages uses a shared hsuyf.github.io origin; redirect-based OAuth
 // returns to this project path without relying on a popup opener.

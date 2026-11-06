@@ -5,5 +5,6 @@ export const firebaseConfig = {
   apiKey: 'YOUR_API_KEY',
   authDomain: 'YOUR_PROJECT_ID.firebaseapp.com',
   projectId: 'YOUR_PROJECT_ID',
-  appId: 'YOUR_APP_ID'
+  appId: 'YOUR_APP_ID',
+  authDomainOverride: '' // Optional Firebase Hosting auth domain for GitHub Pages OAuth
 };
