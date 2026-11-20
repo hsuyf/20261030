@@ -18,9 +18,20 @@ import {
   setDoc,
   where
 } from 'https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js';
+import {
+  initializeAppCheck,
+  ReCaptchaEnterpriseProvider
+} from 'https://www.gstatic.com/firebasejs/12.4.0/firebase-app-check.js';
+import { initAiAssistant } from './ai-assistant.js';
 import { firebaseConfig } from './firebase-config.js';
 
 const app = initializeApp(firebaseConfig);
+if (firebaseConfig.appCheckRecaptchaSiteKey) {
+  initializeAppCheck(app, {
+    provider: new ReCaptchaEnterpriseProvider(firebaseConfig.appCheckRecaptchaSiteKey),
+    isTokenAutoRefreshEnabled: true
+  });
+}
 const auth = getAuth(app);
 const db = getFirestore(app);
 const provider = new GoogleAuthProvider();
@@ -46,6 +57,7 @@ let currentUser = null;
 let authGeneration = 0;
 let saveTimer = null;
 let saveQueue = Promise.resolve();
+let assistantInitialized = false;
 const knownRecords = new Map();
 const knownMilestones = new Map();
 
@@ -93,6 +105,16 @@ function setCloudStatus(message = '') {
 function showCloudError(error) {
   console.error('Firebase Firestore sync error:', error);
   setCloudStatus('雲端同步失敗；目前畫面仍可使用，但這次變更尚未保存。請檢查 Firestore 規則與網路後重新載入。');
+}
+
+function initializeAssistant() {
+  if (assistantInitialized || !window.plannerStorage) return;
+  initAiAssistant({
+    app,
+    getSchedule: () => window.plannerStorage.snapshot(),
+    getUser: () => currentUser
+  });
+  assistantInitialized = true;
 }
 
 async function loadUserData(user) {
@@ -243,6 +265,7 @@ onAuthStateChanged(auth, async (user) => {
   const generation = ++authGeneration;
   if (!user) {
     currentUser = null;
+    window.resetAiAssistant?.();
     window.clearTimeout(saveTimer);
     authLoading.hidden = true;
     signInButton.hidden = false;
@@ -272,12 +295,14 @@ onAuthStateChanged(auth, async (user) => {
     await loadUserData(user);
     if (generation !== authGeneration) return;
     currentUser = user;
+    initializeAssistant();
     authLoading.hidden = true;
     authScreen.hidden = true;
     appRoot.hidden = false;
   } catch (error) {
     if (generation !== authGeneration) return;
     currentUser = user;
+    initializeAssistant();
     authLoading.hidden = true;
     authError.textContent = '無法讀取 Firestore。請確認資料庫規則已部署，然後重新載入。';
     authScreen.hidden = true;

@@ -6,5 +6,6 @@ export const firebaseConfig = {
   authDomain: 'YOUR_PROJECT_ID.firebaseapp.com',
   projectId: 'YOUR_PROJECT_ID',
   appId: 'YOUR_APP_ID',
-  authDomainOverride: '' // Optional Firebase Hosting auth domain for GitHub Pages OAuth
+  authDomainOverride: '', // Optional Firebase Hosting auth domain for GitHub Pages OAuth
+  appCheckRecaptchaSiteKey: 'YOUR_RECAPTCHA_ENTERPRISE_SITE_KEY'
 };
