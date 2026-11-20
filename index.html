@@ -76,6 +76,34 @@ function toggleNotifications(){$('#searchBackdrop').classList.remove('open');$('
 function openRecord(kind,index,item){closeSearchModal();$('#notificationPanel').hidden=true;if(kind==='event'){const target=new Date(`${item.date}T00:00:00`);weekOffset=Math.round((mondayOf(target)-mondayOf(date0))/604800000);currentFilter='全部';$$('.filter').forEach(b=>b.classList.toggle('active',b.dataset.filter==='全部'));switchView('calendar');renderCalendar()}else switchView(kind==='task'?'tasks':'projects');const target=document.querySelector(`[data-search-key="${kind}-${index}"]`);if(target){target.scrollIntoView({behavior:'smooth',block:'center',inline:'center'});target.classList.add('search-match');window.setTimeout(()=>target.classList.remove('search-match'),1800)}}
 $('#searchBtn').onclick=openSearchModal;$('#closeSearch').onclick=closeSearchModal;$('#searchInput').addEventListener('input',renderSearchResults);$('#searchBackdrop').addEventListener('click',e=>{if(e.target.id==='searchBackdrop')closeSearchModal()});$('#notificationBtn').onclick=toggleNotifications;$('#mobileNotificationBtn').onclick=toggleNotifications;$('#closeNotifications').onclick=()=>$('#notificationPanel').hidden=true;document.addEventListener('click',e=>{if(!e.target.closest('#notificationPanel')&&!e.target.closest('#notificationBtn')&&!e.target.closest('#mobileNotificationBtn'))$('#notificationPanel').hidden=true});document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeSearchModal();$('#notificationPanel').hidden=true}});renderAll();renderTags();renderNotificationBadge();
 </script>
+<script>
+// Bridge the existing planner UI to the Firebase module without changing its
+// inline event handlers or exposing Firestore document metadata to user data.
+const originalRenderAll = window.renderAll;
+window.renderAll = function (...args) {
+  const result = originalRenderAll.apply(this, args);
+  window.firebaseScheduleSave?.();
+  return result;
+};
+for (const name of ['toggleTask', 'adjustProgress', 'toggleMilestone']) {
+  const original = window[name];
+  window[name] = function (...args) {
+    const result = original.apply(this, args);
+    window.firebaseScheduleSave?.();
+    return result;
+  };
+}
+window.plannerStorage = {
+  snapshot() { return { tags, tasks, events, projects }; },
+  replace(data) {
+    tags = data.tags || [];
+    tasks = data.tasks || [];
+    events = data.events || [];
+    projects = data.projects || [];
+    originalRenderAll();
+  }
+};
+</script>
 </body>
 </html>
 

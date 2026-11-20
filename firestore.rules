@@ -1,0 +1,175 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Assumed data model:
+    // users/{uid}/records/{recordId}
+    //   tag:      {uid, kind, name, color}
+    //   task:     {uid, kind, name, date, tag, done}
+    //   event:    {uid, kind, name, date, start, end, tag}
+    //   project:  {uid, kind, name, due, progress, next, done}
+    // users/{uid}/records/{projectId}/milestones/{order}
+    //   {uid, name, order}
+    // Record IDs are opaque client-generated IDs. Every document is scoped
+    // under the matching Firebase Authentication UID.
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && resource.data.uid == request.auth.uid;
+    }
+
+    function uidUnchanged() {
+      return request.resource.data.uid == request.auth.uid;
+    }
+
+    function uidNotModified() {
+      return request.resource.data.uid == resource.data.uid;
+    }
+
+    function hasRequiredFields(data, fields) {
+      return data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(data, fields) {
+      return data.keys().hasOnly(fields);
+    }
+
+    function validUid(value) {
+      return value is string && value.size() > 0 && value.size() <= 128;
+    }
+
+    function validText(value, minLength, maxLength) {
+      return value is string && value.size() >= minLength && value.size() <= maxLength;
+    }
+
+    function validDate(value) {
+      return value is string && value.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
+    }
+
+    function validTime(value) {
+      return value is string && value.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$');
+    }
+
+    function validTagRecord(data) {
+      return hasRequiredFields(data, ['uid', 'kind', 'name', 'color'])
+        && hasOnlyAllowedFields(data, ['uid', 'kind', 'name', 'color'])
+        && validUid(data.uid)
+        && data.kind == 'tag'
+        && validText(data.name, 1, 24)
+        && data.color is string
+        && data.color.matches('^#[0-9A-Fa-f]{6}$');
+    }
+
+    function validTaskRecord(data) {
+      return hasRequiredFields(data, ['uid', 'kind', 'name', 'date', 'tag', 'done'])
+        && hasOnlyAllowedFields(data, ['uid', 'kind', 'name', 'date', 'tag', 'done'])
+        && validUid(data.uid)
+        && data.kind == 'task'
+        && validText(data.name, 1, 200)
+        && validDate(data.date)
+        && validText(data.tag, 1, 24)
+        && data.done is bool;
+    }
+
+    function validEventRecord(data) {
+      return hasRequiredFields(data, ['uid', 'kind', 'name', 'date', 'start', 'end', 'tag'])
+        && hasOnlyAllowedFields(data, ['uid', 'kind', 'name', 'date', 'start', 'end', 'tag'])
+        && validUid(data.uid)
+        && data.kind == 'event'
+        && validText(data.name, 1, 200)
+        && validDate(data.date)
+        && validTime(data.start)
+        && validTime(data.end)
+        && validText(data.tag, 1, 24);
+    }
+
+    function validProjectRecord(data) {
+      return hasRequiredFields(data, ['uid', 'kind', 'name', 'due', 'progress', 'next', 'done'])
+        && hasOnlyAllowedFields(data, ['uid', 'kind', 'name', 'due', 'progress', 'next', 'done'])
+        && validUid(data.uid)
+        && data.kind == 'project'
+        && validText(data.name, 1, 200)
+        && validDate(data.due)
+        && (data.progress is int || data.progress is float)
+        && data.progress >= 0
+        && data.progress <= 100
+        && validText(data.next, 1, 200)
+        && data.done is int
+        && data.done >= 0
+        && data.done <= 100;
+    }
+
+    function isValidRecord(data) {
+      return data is map
+        && hasRequiredFields(data, ['uid', 'kind'])
+        && data.kind is string
+        && (validTagRecord(data)
+          || validTaskRecord(data)
+          || validEventRecord(data)
+          || validProjectRecord(data));
+    }
+
+    function validMilestone(data) {
+      return data is map
+        && hasRequiredFields(data, ['uid', 'name', 'order'])
+        && hasOnlyAllowedFields(data, ['uid', 'name', 'order'])
+        && validUid(data.uid)
+        && validText(data.name, 1, 120)
+        && data.order is int
+        && data.order >= 0
+        && data.order < 100;
+    }
+
+    function parentIsProject(userId, recordId) {
+      let parent = /databases/$(database)/documents/users/$(userId)/records/$(recordId);
+      return exists(parent) && get(parent).data.kind == 'project';
+    }
+
+    function parentIsProjectAfter(userId, recordId) {
+      let parent = /databases/$(database)/documents/users/$(userId)/records/$(recordId);
+      return existsAfter(parent) && getAfter(parent).data.kind == 'project';
+    }
+
+    match /users/{userId}/records/{recordId} {
+      allow read: if isOwner(userId) && isDocOwner();
+      allow create: if isOwner(userId)
+        && uidUnchanged()
+        && isValidRecord(request.resource.data);
+      allow update: if isOwner(userId)
+        && isDocOwner()
+        && uidNotModified()
+        && request.resource.data.kind == resource.data.kind
+        && isValidRecord(request.resource.data);
+      allow delete: if isOwner(userId) && isDocOwner();
+
+      match /milestones/{milestoneId} {
+        allow read: if isOwner(userId)
+          && isDocOwner()
+          && parentIsProject(userId, recordId);
+        allow create: if isOwner(userId)
+          && uidUnchanged()
+          && validMilestone(request.resource.data)
+          && parentIsProjectAfter(userId, recordId);
+        allow update: if isOwner(userId)
+          && isDocOwner()
+          && uidNotModified()
+          && validMilestone(request.resource.data)
+          && parentIsProjectAfter(userId, recordId);
+        allow delete: if isOwner(userId)
+          && isDocOwner()
+          && parentIsProject(userId, recordId);
+      }
+    }
+
+    // Everything outside the account-scoped planner path is private by default.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
